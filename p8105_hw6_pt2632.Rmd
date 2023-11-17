@@ -5,7 +5,7 @@ date: "`r Sys.Date()`"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = T, warning = F, message = F)
 ```
 
 ```{r import-lib, message=F}
@@ -13,17 +13,79 @@ library(tidyverse)
 ```
 
 ## Problem 1
-Create a city_state variable (e.g. “Baltimore, MD”), and a binary variable indicating whether the homicide is solved. Omit cities Dallas, TX; Phoenix, AZ; and Kansas City, MO – these don’t report victim race. Also omit Tulsa, AL – this is a data entry mistake. For this problem, limit your analysis those for whom victim_race is white or black. Be sure that victim_age is numeric.
+Create a city_state variable (e.g. “Baltimore, MD”), and a binary variable indicating whether the homicide is solved. 
+Omit cities Dallas, TX; Phoenix, AZ; and Kansas City, MO – these don’t report victim race. Also omit Tulsa, AL – this is a data entry mistake. 
+For this problem, limit your analysis those for whom victim_race is white or black. Be sure that victim_age is numeric.
+```{r problem1-data-import}
+omit_location = c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL")
+omit_race = c("White", "Black")
 
-For the city of Baltimore, MD, use the glm function to fit a logistic regression with resolved vs unresolved as the outcome and victim age, sex and race as predictors. Save the output of glm as an R object; apply the broom::tidy to this object; and obtain the estimate and confidence interval of the adjusted odds ratio for solving homicides comparing male victims to female victims keeping all other variables fixed.
+homicide = read_csv("./data/homicide-data.csv") 
+homicide = homicide |>
+  mutate(city_state = str_c(city, state, sep = ", "),
+         resolved = as.numeric(disposition == "Closed by arrest"),
+         victim_age = as.numeric(victim_age)) |>
+  filter(!city_state %in% omit_location & 
+         victim_race %in% omit_race &
+         victim_sex != "Unknown") |>
+  drop_na(victim_age) |>
+  select(resolved, victim_age, victim_race, victim_sex, city_state)
+homicide
+```
+For the city of Baltimore, MD, use the glm function to fit a logistic regression with resolved vs unresolved as the outcome and victim age, sex and race as predictors. 
+Save the output of glm as an R object; apply the broom::tidy to this object; and obtain the estimate and confidence interval of the adjusted odds ratio for solving homicides comparing male victims to female victims keeping all other variables fixed.
+```{r}
+logit_model = glm(resolved ~ victim_age + victim_sex + victim_race, data = homicide, family = "binomial")
+broom::tidy(logit_model, conf.int = T) |>
+  mutate(OR = exp(estimate),
+         OR.conf.low = exp(conf.low),
+         OR.conf.high = exp(conf.high)) |>
+  filter(str_detect(term, "sex")) |>
+  select(term, OR, OR.conf.low, OR.conf.high) |>
+  knitr::kable(digits = 3)
+```
 
-Now run glm for each of the cities in your dataset, and extract the adjusted odds ratio (and CI) for solving homicides comparing male victims to female victims. Do this within a “tidy” pipeline, making use of purrr::map, list columns, and unnest as necessary to create a dataframe with estimated ORs and CIs for each city.
+
+Now run glm for each of the cities in your dataset, and extract the adjusted odds ratio (and CI) for solving homicides comparing male victims to female victims. 
+Do this within a “tidy” pipeline, making use of purrr::map, list columns, and unnest as necessary to create a dataframe with estimated ORs and CIs for each city.
+```{r}
+tidy_stats = function(city, df){
+  df |> 
+    filter(city_state == city) |>
+    glm(resolved ~ victim_age + victim_sex + victim_race, data = _, family = "binomial") |>
+    broom::tidy(conf.int = T) |>
+    mutate(OR = exp(estimate),
+           OR.conf.low = exp(conf.low),
+           OR.conf.high = exp(conf.high)) |>
+    filter(str_detect(term, "sex")) |>
+    select(term, OR, OR.conf.low, OR.conf.high)
+}
+
+cities = homicide |> pull(city_state) |> unique()
+test_on_city = tibble(
+  city = cities,
+  hypo = map(cities, tidy_stats, df = homicide)
+) |> unnest(hypo) |>
+  select(!term)
+test_on_city
+```
+
 
 Create a plot that shows the estimated ORs and CIs for each city. Organize cities according to estimated OR, and comment on the plot.
-
 ```{r}
+test_on_city |>
+  mutate(city = fct_reorder(city, OR)) |>
+  ggplot(aes(x = city, y = OR, color = city)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = OR.conf.low, ymax = OR.conf.high)) +
+  theme_bw() +
+  labs(x = "city", y = "OR", title = "OR of sex") +
+  theme(plot.title = element_text(hjust = 0.5), axis.title.x=element_blank(),
+        axis.text.x=element_blank(), axis.ticks.x=element_blank())
 
 ```
+
+
 
 ## Problem 2
 ```{r problem2-data-load}
@@ -39,11 +101,17 @@ weather_df =
     tmax = tmax / 10) |>
   select(name, id, everything())
 ```
+
 The boostrap is helpful when you’d like to perform inference for a parameter / value / summary that doesn’t have an easy-to-write-down distribution in the usual repeated sampling framework. We’ll focus on a simple linear regression with tmax as the response with tmin and prcp as the predictors, and are interested in the distribution of two quantities estimated from these data:
+```{r}
+ 
+```
 
 r̂ 2
 log(β̂ 1∗β̂ 2)
-Use 5000 bootstrap samples and, for each bootstrap sample, produce estimates of these two quantities. Plot the distribution of your estimates, and describe these in words. Using the 5000 bootstrap estimates, identify the 2.5% and 97.5% quantiles to provide a 95% confidence interval for r̂ 2
+Use 5000 bootstrap samples and, for each bootstrap sample, produce estimates of these two quantities. 
+Plot the distribution of your estimates, and describe these in words. 
+Using the 5000 bootstrap estimates, identify the 2.5% and 97.5% quantiles to provide a 95% confidence interval for r̂ 2
  and log(β̂ 0∗β̂ 1)
 . Note: broom::glance() is helpful for extracting r̂ 2
  from a fitted regression, and broom::tidy() (with some additional wrangling) should help in computing log(β̂ 1∗β̂ 2).
