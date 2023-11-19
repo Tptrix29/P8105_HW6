@@ -16,6 +16,7 @@ library(tidyverse)
 Create a city_state variable (e.g. “Baltimore, MD”), and a binary variable indicating whether the homicide is solved. 
 Omit cities Dallas, TX; Phoenix, AZ; and Kansas City, MO – these don’t report victim race. Also omit Tulsa, AL – this is a data entry mistake. 
 For this problem, limit your analysis those for whom victim_race is white or black. Be sure that victim_age is numeric.
+
 ```{r problem1-data-import}
 omit_location = c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL")
 omit_race = c("White", "Black")
@@ -30,10 +31,11 @@ homicide = homicide |>
          victim_sex != "Unknown") |>
   drop_na(victim_age) |>
   select(resolved, victim_age, victim_race, victim_sex, city_state)
-homicide
 ```
+
 For the city of Baltimore, MD, use the glm function to fit a logistic regression with resolved vs unresolved as the outcome and victim age, sex and race as predictors. 
 Save the output of glm as an R object; apply the broom::tidy to this object; and obtain the estimate and confidence interval of the adjusted odds ratio for solving homicides comparing male victims to female victims keeping all other variables fixed.
+
 ```{r}
 logit_model = glm(resolved ~ victim_age + victim_sex + victim_race, data = homicide, family = "binomial")
 broom::tidy(logit_model, conf.int = T) |>
@@ -67,7 +69,8 @@ test_on_city = tibble(
   hypo = map(cities, tidy_stats, df = homicide)
 ) |> unnest(hypo) |>
   select(-term)
-test_on_city
+test_on_city |>
+  knitr::kable(digits = 3)
 ```
 
 
@@ -159,28 +162,88 @@ mlr = lm(bwt ~ ., data = birth_weight)
 mlr |> broom::tidy() |> dim()
 mlr$rank
 ```
-The rank of MLR model doesn't equal to the count of predictors for fitting model, indicating that the variable with `NA` as coefficient estimate is with colinearity to other variable. So we should discard this variable because it provide redundant information.
+The rank of MLR model (`r mlr$rank`) doesn't equal to the count of predictors (`r dim(mlr |> broom::tidy())[1]`) for fitting model, indicating that the variable with `NA` as coefficient estimate is with colinearity to other variable. So we should discard this variable because it provide redundant information.
 
 ```{r}
 # variable selection
 mlr |> broom::tidy() |>
-  filter(p.value < 0.05 & !str_detect(term, "Intercept"))
+  filter(p.value < 0.05 & !str_detect(term, "Intercept")) |>
+  knitr::kable(digits = 3)
 ```
 Select variables with significant effect as predictors to fit MLR. Accroding to the previous result, I select `babysex`, `bhead`, `blength`, `delwt`, `gaweeks`,  `parity`, `smoken` as predictors.
 
 
-#### Fitting MLR
+#### Fitting MLR & Plot
 ```{r}
 my_mlr = lm(bwt ~ babysex + bhead + blength + delwt + gaweeks + parity + smoken, data = birth_weight)
-broom::tidy(my_mlr)
+broom::tidy(my_mlr) |>
+  knitr::kable(digits = 3)
+```
+
+```{r}
+birth_weight |> 
+  modelr::add_predictions(my_mlr) |>
+  modelr::add_residuals(my_mlr) |>
+  select(pred, resid) |>
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = .5)
 ```
 
 
+#### Model comparison with cross validation
 
 Compare your model to two others:
 One using length at birth and gestational age as predictors (main effects only)
 One using head circumference, length, sex, and all interactions (including the three-way interaction) between these
 Make this comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.
 
-Note that although we expect your model to be reasonable, model building itself is not a main idea of the course and we don’t necessarily expect your model to be “optimal”.
+```{r}
+mse = function(val, pred){ return(mean((val - pred) ^ 2)) }
+model_eval = function(train_df, test_df){
+  my_mlr = lm(bwt ~ babysex + bhead + blength + delwt + gaweeks + parity + smoken, data = train_df)
+  mlr1 = lm(bwt ~ blength + gaweeks, data = train_df)
+  mlr2 = lm(bwt ~ bhead * blength * babysex, data = train_df)
+  eval_df = test_df |>
+    modelr::add_predictions(my_mlr, var = "pred0") |>
+    modelr::add_predictions(mlr1, var = "pred1") |>
+    modelr::add_predictions(mlr2, var = "pred2")
+  return(
+    tibble(
+      mse0 = mse(eval_df$bwt, eval_df$pred0), 
+      mse1 = mse(eval_df$bwt, eval_df$pred1), 
+      mse2 = mse(eval_df$bwt, eval_df$pred2)
+    )
+  )
+}
+```
+
+```{r}
+times = 50
+mse_df = birth_weight |>
+  modelr::crossv_mc(n = times) |>
+  mutate(train = map(train, as.tibble), 
+         test = map(test, as.tibble), 
+         eval_mse = map2(train, test, model_eval)) |>
+  unnest(eval_mse) |>
+  select(starts_with("mse"))
+mse_df 
+```
+
+```{r}
+mse_df |>
+  pivot_longer(cols = starts_with("mse"), names_to = "model_slc", values_to = "mse",  names_prefix = "mse") |>
+  mutate(model = recode(model_slc, 
+                        "0" = "my model", 
+                        "1" = "model 1", 
+                        "2" = "model 2")) |>
+  ggplot(aes(x = mse, fill = model)) +
+  geom_density(alpha = .4, adjust = .8, color = "steelblue") +
+  labs(
+    title = "Density of MSE in different model"
+  ) + 
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
 
