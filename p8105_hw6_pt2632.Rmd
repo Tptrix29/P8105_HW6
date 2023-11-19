@@ -66,7 +66,7 @@ test_on_city = tibble(
   city = cities,
   hypo = map(cities, tidy_stats, df = homicide)
 ) |> unnest(hypo) |>
-  select(!term)
+  select(-term)
 test_on_city
 ```
 
@@ -104,7 +104,19 @@ weather_df =
 
 The boostrap is helpful when you’d like to perform inference for a parameter / value / summary that doesn’t have an easy-to-write-down distribution in the usual repeated sampling framework. We’ll focus on a simple linear regression with tmax as the response with tmin and prcp as the predictors, and are interested in the distribution of two quantities estimated from these data:
 ```{r}
- 
+slr = function(df){
+  model = lm(tmax ~ tmin + prcp, data = df)
+  return(
+    tibble(
+      residual = broom::glance(model) |> pull(r.squared),
+      log_beta1_beta2 = broom::tidy(model, conf.int = T) |> 
+        filter(term != "(Intercept)") |>
+        pull(estimate) |> prod() |> log()
+    )
+  )
+}
+
+
 ```
 
 r̂ 2
@@ -119,16 +131,56 @@ Using the 5000 bootstrap estimates, identify the 2.5% and 97.5% quantiles to pro
 ## Problem 3
 Load and clean the data for regression analysis (i.e. convert numeric to factor where appropriate, check for missing data, etc.).
 
-Propose a regression model for birthweight. This model may be based on a hypothesized structure for the factors that underly birthweight, on a data-driven model-building process, or a combination of the two. Describe your modeling process and show a plot of model residuals against fitted values – use add_predictions and add_residuals in making this plot.
+#### Preprocessing
+```{r}
+birth_weight = read.csv("./data/birthweight.csv") |> tibble()
+birth_weight = birth_weight |>
+  mutate(babysex = factor(recode(babysex, `1` = "male", `2` = "female")),
+         frace = factor(recode(frace, `1` = "white",  `2` = "black", `3` = "asian", `4` = "puerto rican",`8` = "other", `9` = "unknown")),
+         mrace = factor(recode(mrace, `1` = "white", `2` = "black", `3` = "asian", `4` = "puerto rican", `8` = "other")),
+         malform = factor(recode(malform, `0` = "absent", `1` = "present"))) |>
+  select(-pnumlbw, -pnumsga)
+
+```
+
+Data cleaning:
+- Mutate `babysex`, `frace`, `mrace` and `malform` as factor because they are categorical variables.
+- Remove `pnumlbw` and `pnumsga` because they both only 0 in all values, indicating they are useless variables.
+
+
+Propose a regression model for birthweight. 
+This model may be based on a hypothesized structure for the factors that underly birthweight, on a data-driven model-building process, or a combination of the two. 
+Describe your modeling process and show a plot of model residuals against fitted values – use add_predictions and add_residuals in making this plot.
+
+#### Variable selection
+```{r}
+# baisc try
+mlr = lm(bwt ~ ., data = birth_weight)
+mlr |> broom::tidy() |> dim()
+mlr$rank
+```
+The rank of MLR model doesn't equal to the count of predictors for fitting model, indicating that the variable with `NA` as coefficient estimate is with colinearity to other variable. So we should discard this variable because it provide redundant information.
+
+```{r}
+# variable selection
+mlr |> broom::tidy() |>
+  filter(p.value < 0.05 & !str_detect(term, "Intercept"))
+```
+Select variables with significant effect as predictors to fit MLR. Accroding to the previous result, I select `babysex`, `bhead`, `blength`, `delwt`, `gaweeks`,  `parity`, `smoken` as predictors.
+
+
+#### Fitting MLR
+```{r}
+my_mlr = lm(bwt ~ babysex + bhead + blength + delwt + gaweeks + parity + smoken, data = birth_weight)
+broom::tidy(my_mlr)
+```
+
+
 
 Compare your model to two others:
-
 One using length at birth and gestational age as predictors (main effects only)
 One using head circumference, length, sex, and all interactions (including the three-way interaction) between these
 Make this comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.
 
 Note that although we expect your model to be reasonable, model building itself is not a main idea of the course and we don’t necessarily expect your model to be “optimal”.
 
-```{r}
-
-```
