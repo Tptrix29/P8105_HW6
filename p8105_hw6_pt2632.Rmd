@@ -10,13 +10,12 @@ knitr::opts_chunk$set(echo = T, warning = F, message = F)
 
 ```{r import-lib, message=F}
 library(tidyverse)
+library(latex2exp)
 ```
 
 ## Problem 1
-Create a city_state variable (e.g. “Baltimore, MD”), and a binary variable indicating whether the homicide is solved. 
-Omit cities Dallas, TX; Phoenix, AZ; and Kansas City, MO – these don’t report victim race. Also omit Tulsa, AL – this is a data entry mistake. 
-For this problem, limit your analysis those for whom victim_race is white or black. Be sure that victim_age is numeric.
 
+### Data filtering
 ```{r problem1-data-import}
 omit_location = c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL")
 omit_race = c("White", "Black")
@@ -33,9 +32,8 @@ homicide = homicide |>
   select(resolved, victim_age, victim_race, victim_sex, city_state)
 ```
 
-For the city of Baltimore, MD, use the glm function to fit a logistic regression with resolved vs unresolved as the outcome and victim age, sex and race as predictors. 
-Save the output of glm as an R object; apply the broom::tidy to this object; and obtain the estimate and confidence interval of the adjusted odds ratio for solving homicides comparing male victims to female victims keeping all other variables fixed.
 
+### Model fitting
 ```{r}
 logit_model = glm(resolved ~ victim_age + victim_sex + victim_race, data = homicide, family = "binomial")
 broom::tidy(logit_model, conf.int = T) |>
@@ -48,8 +46,6 @@ broom::tidy(logit_model, conf.int = T) |>
 ```
 
 
-Now run glm for each of the cities in your dataset, and extract the adjusted odds ratio (and CI) for solving homicides comparing male victims to female victims. 
-Do this within a “tidy” pipeline, making use of purrr::map, list columns, and unnest as necessary to create a dataframe with estimated ORs and CIs for each city.
 ```{r}
 tidy_stats = function(city, df){
   df |> 
@@ -73,6 +69,7 @@ test_on_city |>
   knitr::kable(digits = 3)
 ```
 
+### Plot
 
 Create a plot that shows the estimated ORs and CIs for each city. Organize cities according to estimated OR, and comment on the plot.
 ```{r}
@@ -91,6 +88,8 @@ test_on_city |>
 
 
 ## Problem 2
+
+### Data import
 ```{r problem2-data-load}
 weather_df = 
   rnoaa::meteo_pull_monitors(
@@ -105,34 +104,59 @@ weather_df =
   select(name, id, everything())
 ```
 
-The boostrap is helpful when you’d like to perform inference for a parameter / value / summary that doesn’t have an easy-to-write-down distribution in the usual repeated sampling framework. We’ll focus on a simple linear regression with tmax as the response with tmin and prcp as the predictors, and are interested in the distribution of two quantities estimated from these data:
+### Bootstrapping
+
 ```{r}
-slr = function(df){
+mlr = function(resample){
+  df = resample |> as_tibble()
   model = lm(tmax ~ tmin + prcp, data = df)
   return(
     tibble(
-      residual = broom::glance(model) |> pull(r.squared),
-      log_beta1_beta2 = broom::tidy(model, conf.int = T) |> 
+      residual_sq = broom::glance(model) |> pull(r.squared),
+      log_beta1_beta2 = broom::tidy(model) |> 
         filter(term != "(Intercept)") |>
         pull(estimate) |> prod() |> log()
-    )
-  )
+  ))
+  
 }
 
-
+boot_straps = modelr::bootstrap(weather_df, n = 5000) |> 
+  mutate(result = map(strap, mlr)) |>
+  unnest(result)
 ```
 
-r̂ 2
-log(β̂ 1∗β̂ 2)
-Use 5000 bootstrap samples and, for each bootstrap sample, produce estimates of these two quantities. 
-Plot the distribution of your estimates, and describe these in words. 
-Using the 5000 bootstrap estimates, identify the 2.5% and 97.5% quantiles to provide a 95% confidence interval for r̂ 2
- and log(β̂ 0∗β̂ 1)
-. Note: broom::glance() is helpful for extracting r̂ 2
- from a fitted regression, and broom::tidy() (with some additional wrangling) should help in computing log(β̂ 1∗β̂ 2).
+### Plot
+```{r}
+boot_straps |> ggplot(aes(x = residual_sq)) +
+  geom_density(fill = "steelblue", alpha = .7, color = "steelblue") +
+  theme_bw() +
+  labs(x = TeX("$r^2$"), y = "density", title = TeX("Distribution of $r^2$")) +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+Description: The distribution of $r^2$ is approximately symmetric. The mean is around 0.92.
+
+```{r}
+boot_straps |> ggplot(aes(x = log_beta1_beta2)) +
+  geom_density(fill = "tomato", alpha = .7, color = "tomato") +
+  theme_bw() +
+  labs(x = TeX("$\\log(\\beta_1*\\beta_2)$"), y = "density", title = TeX("Distribution of $\\log(\\beta_1*\\beta_2)$")) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+Description: All values are less than 0. The distribution is left-skewed, which may be caused by the `NA` generated during the logarithm calculation.
+
+### Quantile for CI
+```{r}
+ci = function(data){
+  quantile(data, na.rm = T, probs = c(0.025, 0.975)) |> round(digits = 3)
+}
+```
+
+The 95% confidence interval for $r^2$ is (`r ci(boot_straps$residual_sq)[1]`, `r ci(boot_straps$residual_sq)[2]`).
+
+The 95% confidence interval for $\log(\beta_1*\beta_2)$ is (`r ci(boot_straps$log_beta1_beta2)[1]`, `r ci(boot_straps$log_beta1_beta2)[2]`).
 
 ## Problem 3
-Load and clean the data for regression analysis (i.e. convert numeric to factor where appropriate, check for missing data, etc.).
 
 #### Preprocessing
 ```{r}
@@ -151,16 +175,10 @@ Data cleaning:
 - Remove `pnumlbw` and `pnumsga` because they both only 0 in all values, indicating they are useless variables.
 
 
-Propose a regression model for birthweight. 
-This model may be based on a hypothesized structure for the factors that underly birthweight, on a data-driven model-building process, or a combination of the two. 
-Describe your modeling process and show a plot of model residuals against fitted values – use add_predictions and add_residuals in making this plot.
-
 #### Variable selection
 ```{r}
 # baisc try
 mlr = lm(bwt ~ ., data = birth_weight)
-mlr |> broom::tidy() |> dim()
-mlr$rank
 ```
 The rank of MLR model (`r mlr$rank`) doesn't equal to the count of predictors (`r dim(mlr |> broom::tidy())[1]`) for fitting model, indicating that the variable with `NA` as coefficient estimate is with colinearity to other variable. So we should discard this variable because it provide redundant information.
 
@@ -186,13 +204,16 @@ birth_weight |>
   modelr::add_residuals(my_mlr) |>
   select(pred, resid) |>
   ggplot(aes(x = pred, y = resid)) +
-  geom_point(alpha = .5)
+  geom_point(alpha = .5) + 
+  theme_bw() +
+  labs(x = "Fitted value", y = "Residual", title = "Residual-Fitted value") +
+  theme(plot.title = element_text(hjust = 0.5))
 ```
 
 
 #### Model comparison with cross validation
 
-Compare your model to two others:
+Compare model to two others:
 One using length at birth and gestational age as predictors (main effects only)
 One using head circumference, length, sex, and all interactions (including the three-way interaction) between these
 Make this comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.
@@ -226,7 +247,6 @@ mse_df = birth_weight |>
          eval_mse = map2(train, test, model_eval)) |>
   unnest(eval_mse) |>
   select(starts_with("mse"))
-mse_df 
 ```
 
 ```{r}
