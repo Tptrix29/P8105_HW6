@@ -10,6 +10,7 @@ knitr::opts_chunk$set(echo = T, warning = F, message = F)
 
 ```{r import-lib, message=F}
 library(tidyverse)
+library(modelr)
 library(latex2exp)
 ```
 
@@ -219,20 +220,15 @@ One using head circumference, length, sex, and all interactions (including the t
 Make this comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.
 
 ```{r}
-mse = function(val, pred){ return(mean((val - pred) ^ 2)) }
 model_eval = function(train_df, test_df){
   my_mlr = lm(bwt ~ babysex + bhead + blength + delwt + gaweeks + parity + smoken, data = train_df)
   mlr1 = lm(bwt ~ blength + gaweeks, data = train_df)
   mlr2 = lm(bwt ~ bhead * blength * babysex, data = train_df)
-  eval_df = test_df |>
-    modelr::add_predictions(my_mlr, var = "pred0") |>
-    modelr::add_predictions(mlr1, var = "pred1") |>
-    modelr::add_predictions(mlr2, var = "pred2")
   return(
     tibble(
-      mse0 = mse(eval_df$bwt, eval_df$pred0), 
-      mse1 = mse(eval_df$bwt, eval_df$pred1), 
-      mse2 = mse(eval_df$bwt, eval_df$pred2)
+      rmse0 = rmse(my_mlr, test_df), 
+      rmse1 = rmse(mlr1, test_df), 
+      rmse2 = rmse(mlr2, test_df)
     )
   )
 }
@@ -240,26 +236,26 @@ model_eval = function(train_df, test_df){
 
 ```{r}
 times = 100
-mse_df = birth_weight |>
+rmse_df = birth_weight |>
   modelr::crossv_mc(n = times) |>
   mutate(train = map(train, as.tibble), 
          test = map(test, as.tibble), 
          eval_mse = map2(train, test, model_eval)) |>
   unnest(eval_mse) |>
-  select(starts_with("mse"))
+  select(starts_with("rmse"))
 ```
 
 ```{r}
-mse_df |>
-  pivot_longer(cols = starts_with("mse"), names_to = "model_slc", values_to = "mse",  names_prefix = "mse") |>
+rmse_df |>
+  pivot_longer(cols = starts_with("rmse"), names_to = "model_slc", values_to = "rmse",  names_prefix = "rmse") |>
   mutate(model = recode(model_slc, 
                         "0" = "my model", 
                         "1" = "model 1", 
                         "2" = "model 2")) |>
-  ggplot(aes(x = mse, fill = model)) +
+  ggplot(aes(x = rmse, fill = model)) +
   geom_density(alpha = .4, adjust = .8, color = "steelblue") +
   labs(
-    title = "Density of MSE in different model"
+    title = "Density of RMSE in different model"
   ) + 
   theme_bw() + 
   theme(plot.title = element_text(hjust = 0.5))
