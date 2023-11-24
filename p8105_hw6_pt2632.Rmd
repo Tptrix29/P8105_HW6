@@ -239,7 +239,7 @@ model_eval = function(train_df, test_df){
 ```
 
 ```{r}
-times = 50
+times = 100
 mse_df = birth_weight |>
   modelr::crossv_mc(n = times) |>
   mutate(train = map(train, as.tibble), 
