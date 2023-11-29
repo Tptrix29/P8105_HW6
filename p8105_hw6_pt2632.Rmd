@@ -136,6 +136,7 @@ boot_straps |> ggplot(aes(x = residual_sq)) +
   labs(x = TeX("$r^2$"), y = "density", title = TeX("Distribution of $r^2$")) +
   theme(plot.title = element_text(hjust = 0.5))
 ```
+
 Description: The distribution of $r^2$ is approximately symmetric. The mean is around 0.92.
 
 ```{r}
@@ -146,6 +147,7 @@ boot_straps |> ggplot(aes(x = log_beta1_beta2)) +
   theme(plot.title = element_text(hjust = 0.5))
 
 ```
+
 Description: All values are less than 0. The distribution is left-skewed, which may be caused by the `NA` generated during the logarithm calculation.
 The `NA` ratio is `r boot_straps |> pull(log_beta1_beta2) |> is.na() |> sum() / dim(boot_straps)[1]`.
 
