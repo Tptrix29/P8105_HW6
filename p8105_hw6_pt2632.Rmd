@@ -36,7 +36,9 @@ homicide = homicide |>
 
 ### Model fitting
 ```{r}
-logit_model = glm(resolved ~ victim_age + victim_sex + victim_race, data = homicide, family = "binomial")
+logit_model = homicide |> 
+  filter(city_state == "Baltimore, MD") |>
+  glm(resolved ~ victim_age + victim_sex + victim_race, data = _, family = "binomial")
 broom::tidy(logit_model, conf.int = T) |>
   mutate(OR = exp(estimate),
          OR.conf.low = exp(conf.low),
@@ -145,6 +147,7 @@ boot_straps |> ggplot(aes(x = log_beta1_beta2)) +
 
 ```
 Description: All values are less than 0. The distribution is left-skewed, which may be caused by the `NA` generated during the logarithm calculation.
+The `NA` ratio is `r boot_straps |> pull(log_beta1_beta2) |> is.na() |> sum() / dim(boot_straps)[1]`.
 
 ### Quantile for CI
 ```{r}
