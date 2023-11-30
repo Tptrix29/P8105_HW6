@@ -181,25 +181,18 @@ Data cleaning:
 - Remove `pnumlbw` and `pnumsga` because they both only 0 in all values, indicating they are useless variables.
 
 
-#### Variable selection
+#### Model description
 ```{r}
-# baisc try
+# model with full variables
 mlr = lm(bwt ~ ., data = birth_weight)
+mlr |> summary()
 ```
-The rank of MLR model (`r mlr$rank`) doesn't equal to the count of predictors (`r dim(mlr |> broom::tidy())[1]`) for fitting model, indicating that the variable with `NA` as coefficient estimate is with colinearity to other variable. So we should discard this variable because it provide redundant information.
-
-```{r}
-# variable selection
-mlr |> broom::tidy() |>
-  filter(p.value < 0.05 & !str_detect(term, "Intercept")) |>
-  knitr::kable(digits = 3)
-```
-Select variables with significant effect as predictors to fit MLR. Accroding to the previous result, I select `babysex`, `bhead`, `blength`, `delwt`, `gaweeks`,  `parity`, `smoken` as predictors.
+By using all variables for linear regression, I found that `babysex`, `bhead`, `blength`, `delwt`, `gaweeks`,  `parity`, `smoken` are significant variables and coefficient of `wtgain` variable is fitted as `NA`(maybe caused by collinearity), while other variables are not significant.
 
 
 #### Fitting MLR & Plot
 ```{r}
-my_mlr = lm(bwt ~ babysex + bhead + blength + delwt + gaweeks + parity + smoken, data = birth_weight)
+my_mlr = lm(bwt ~ ., data = birth_weight)
 broom::tidy(my_mlr) |>
   knitr::kable(digits = 3)
 ```
